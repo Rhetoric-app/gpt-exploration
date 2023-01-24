@@ -1,0 +1,21 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+gpt-index = "*"
+requests = "*"
+typing-extensions = "*"
+mypy = "*"
+black = "*"
+autoflake = "*"
+isort = "*"
+flake8 = "*"
+python-dotenv = "*"
+types-requests = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.11"

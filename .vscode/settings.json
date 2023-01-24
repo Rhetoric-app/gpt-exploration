@@ -1,0 +1,11 @@
+{
+    "python.analysis.extraPaths": [
+        "/Users/jtschoonhoven/.local/share/virtualenvs/gpt-exploration-GjT92kGK/lib/python3.11/site-packages"
+    ],
+    "mypy.configFile": "setup.cfg",
+    "python.linting.mypyPath": "/Users/jtschoonhoven/.local/share/virtualenvs/gpt-exploration-GjT92kGK/bin/mypy",
+    "mypy.dmypyExecutable": "/Users/jtschoonhoven/.local/share/virtualenvs/gpt-exploration-GjT92kGK/bin/dmypy",
+    "python.linting.flake8Enabled": false,
+    "python.linting.mypyEnabled": true,
+    "python.linting.enabled": true
+}
