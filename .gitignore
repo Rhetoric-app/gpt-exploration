@@ -1,2 +1,4 @@
 .env
 .DS_Store
+sql-index.json
+sec-index.json

@@ -29,7 +29,7 @@ def _build_index() -> BaseGPTIndex:
 
     try:
         return gpt.GPTSimpleVectorIndex.load_from_disk(
-            'index.json',
+            'sql-index.json',
             llm_predictor=llm_predictor,
             prompt_helper=prompt_helper,
         )
@@ -86,7 +86,7 @@ def _build_index() -> BaseGPTIndex:
     )
     index.insert(final_doc)
     try:
-        index.save_to_disk('index.json')
+        index.save_to_disk('sql-index.json')
     except Exception:
         print('Failed to save index to disk')
     return index
