@@ -1,17 +1,11 @@
-"""
-https://github.com/jerryjliu/gpt_index/blob/main/examples/struct_indices/SQLIndexDemo.ipynb
-https://github.com/jerryjliu/gpt_index/blob/main/examples/struct_indices/SQLIndexDemo-Context.ipynb
-https://github.com/jerryjliu/gpt_index/issues/204
-"""
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
+
 import gpt_index as gpt
-from gpt_index.indices.query.query_runner import QueryRunner
-from gpt_index.indices.query.struct_store.sql import GPTNLStructStoreIndexQuery
-from gpt_index.prompts.default_prompts import DEFAULT_TEXT_TO_SQL_PROMPT
-import sqlalchemy as db
-from gpt_index.indices.query.query_map import get_query_cls
 import langchain
+import sqlalchemy as db
+from gpt_index.prompts.default_prompts import DEFAULT_TEXT_TO_SQL_PROMPT
+
 from app.env import OPENAI_API_KEY
 
 # Configure SqlAlchemy
@@ -19,7 +13,7 @@ engine = db.create_engine("sqlite:///:memory:")
 metadata_obj = db.MetaData(bind=engine)
 
 # Configure LLM
-llm = langchain.OpenAI(temperature=0, model_name="text-davinci-002", openai_api_key=OPENAI_API_KEY)
+llm = langchain.OpenAI(temperature=0, model_name="text-davinci-003", openai_api_key=OPENAI_API_KEY)
 llm_predictor = gpt.LLMPredictor(llm=llm)
 prompt_helper = gpt.PromptHelper.from_llm_predictor(llm_predictor)
 
@@ -126,7 +120,7 @@ tables_schema = _get_all_tables_desc()
 
 if __name__ == '__main__':
     while True:
-        query_str = input('\nEnter a database query in plain english, or enter "q" to exit\n')
+        query_str = input('\nEnter a database query in plain english, or enter "q" to exit\n> ')
         if query_str == 'q':
             break
         sql_query_str, _ = llm_predictor.predict(DEFAULT_TEXT_TO_SQL_PROMPT, query_str=query_str, schema=tables_schema)
@@ -134,6 +128,5 @@ if __name__ == '__main__':
         print(sql_query_str)
         try:
             sql_database.run_sql(sql_query_str)
-            print('VALID')
-        except Exception:
-            print('NOT VALID')
+        except Exception as e:
+            print(f'\n\nSQL ERROR:\n{e}')
