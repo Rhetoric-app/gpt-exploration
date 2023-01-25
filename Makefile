@@ -1,7 +1,7 @@
 install:
 	pipenv install
 
-gpt:
+gpt-sql:
 	PYTHONPATH=. pipenv run python app/generate_sql.py
 
 python:
