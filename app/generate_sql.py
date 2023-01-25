@@ -6,7 +6,16 @@ import langchain
 import sqlalchemy as db
 from gpt_index.prompts.default_prompts import DEFAULT_TEXT_TO_SQL_PROMPT
 
-from app.env import OPENAI_API_KEY
+try:
+    from app.env import OPENAI_API_KEY
+except ModuleNotFoundError as err:
+    import streamlit as st
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+    is_streamlit = bool(get_script_run_ctx())
+    if not is_streamlit:
+        raise err
+    OPENAI_API_KEY = st.secrets['OPENAI_API_KEY']
 
 # Configure SqlAlchemy
 engine = db.create_engine("sqlite:///:memory:")
@@ -141,9 +150,9 @@ if __name__ == '__main__':
         nl_query = st.text_input('Natural language query')
         if st.button('Execute'):
             sql_str = _execute(nl_query)
-            err = _check_sql(sql_str)
-            if err:
-                st.write(err)
+            error = _check_sql(sql_str)
+            if error:
+                st.write(error)
             else:
                 st.write(sql_str)
     else:
@@ -152,9 +161,9 @@ if __name__ == '__main__':
             if nl_query == 'q':
                 break
             sql_str = _execute(nl_query)
-            err = _check_sql(sql_str)
+            error = _check_sql(sql_str)
             print('\n\n')
-            if err:
-                print(err)
+            if error:
+                print(error)
             else:
                 print(sql_str)
