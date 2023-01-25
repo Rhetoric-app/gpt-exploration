@@ -19,6 +19,7 @@ def _build_index():
             except Exception:
                 continue
     index.save_to_disk('sec-index.json')
+    return index
 
 
 if __name__ == '__main__':
