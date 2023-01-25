@@ -1,13 +1,37 @@
 from time import sleep
 import gpt_index as gpt
+import langchain
+
+try:
+    from app.env import OPENAI_API_KEY
+except ModuleNotFoundError as err:
+    import streamlit as st
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+    is_streamlit = bool(get_script_run_ctx())
+    if not is_streamlit:
+        raise err
+    OPENAI_API_KEY = st.secrets['OPENAI_API_KEY']
+
+llm = langchain.OpenAI(temperature=0, model_name="text-davinci-003", openai_api_key=OPENAI_API_KEY)
+llm_predictor = gpt.LLMPredictor(llm=llm)
+prompt_helper = gpt.PromptHelper.from_llm_predictor(llm_predictor)
 
 
 def _build_index():
     try:
-        return gpt.GPTSimpleVectorIndex.load_from_disk('sec-index.json')
+        return gpt.GPTSimpleVectorIndex.load_from_disk(
+            'sec-index.json',
+            llm_predictor=llm_predictor,
+            prompt_helper=prompt_helper,
+        )
     except Exception:
         print('Failed to load index from disk: rebuilding from scratch...')
-    index = gpt.GPTSimpleVectorIndex(documents=[])
+    index = gpt.GPTSimpleVectorIndex(
+        documents=[],
+        llm_predictor=llm_predictor,
+        prompt_helper=prompt_helper,
+    )
 
     initial_doc = gpt.Document(
         'The following inputs are public SEC filings for DoorDash, Lyft, and Uber:\n'
