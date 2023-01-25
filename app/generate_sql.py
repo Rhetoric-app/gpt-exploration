@@ -147,6 +147,8 @@ if __name__ == '__main__':
 
     is_streamlit = bool(get_script_run_ctx())
     if is_streamlit:
+        # schema = '\n'.join([f'{t.name}\n{"\n".join([f"  {c.name}: {c.type}" for c in t.cols])}' for t in TABLES])  # type: ignore
+        st.write(tables_schema)
         nl_query = st.text_input('Natural language query')
         if st.button('Execute'):
             sql_str = _execute(nl_query)
