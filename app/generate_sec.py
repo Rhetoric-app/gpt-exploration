@@ -7,8 +7,15 @@ def _build_index():
         return gpt.GPTSimpleVectorIndex.load_from_disk('sec-index.json')
     except Exception:
         print('Failed to load index from disk: rebuilding from scratch...')
-    documents = gpt.SimpleDirectoryReader('app/sec_filings').load_data()
     index = gpt.GPTSimpleVectorIndex(documents=[])
+
+    initial_doc = gpt.Document(
+        'The following inputs are public SEC filings for DoorDash, Lyft, and Uber:\n'
+        '----------------------------------------'
+    )
+    index.insert(initial_doc)
+
+    documents = gpt.SimpleDirectoryReader('app/sec_filings').load_data()
     for doc in documents:
         try:
             index.insert(doc)
@@ -18,6 +25,16 @@ def _build_index():
                 index.insert(doc)
             except Exception:
                 continue
+
+    final_doc = gpt.Document(
+        (
+            '----------------------------------------\n'
+            '(END OF SEC FILINGS)\n\n'
+            'Given an input question, respond with relevant information from the SEC filings:\n'
+        )
+    )
+
+    index.insert(final_doc)
     index.save_to_disk('sec-index.json')
     return index
 
