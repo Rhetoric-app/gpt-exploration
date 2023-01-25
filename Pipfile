@@ -16,7 +16,7 @@ python-dotenv = "*"
 types-requests = "*"
 sqlalchemy = "*"
 streamlit = "*"
-psycopg2 = "*"
+psycopg2-binary = "*"
 
 [dev-packages]
 
