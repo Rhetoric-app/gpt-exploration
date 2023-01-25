@@ -1,11 +1,11 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "621beab764bf35343edd98b6b84121e60372f4c3b801820cdc5e56520648f3ca"
+            "sha256": "f585a035f3090801ba7ebcfcd4db6d353d05360b9c693e4730a68a2acc5a41cf"
         },
         "pipfile-spec": 6,
         "requires": {
-            "python_version": "3.10"
+            "python_version": "3.11"
         },
         "sources": [
             {
@@ -338,7 +338,7 @@
                 "sha256:191c19e068c25295db574107e1c6e570ce26de0902d5c5d39b028e33092f6863",
                 "sha256:8479168f02005e1e3764b3b9bb46e3654f0e3b01ea1e886e1a0d322bd675ffba"
             ],
-            "markers": "python_version < '4' and python_full_version >= '3.8.1'",
+            "markers": "python_version < '4.0' and python_full_version >= '3.8.1'",
             "version": "==0.0.69"
         },
         "lxml": {
@@ -989,7 +989,7 @@
                 "sha256:e3c1808008124850115a3f7e793a975cfa5c8a26ceeeb9ff9cbb4485cac556df",
                 "sha256:f8cb80fe8d14307e4124f6fad64dfd87ab749c9d275f82b8b4ec84c84ecebdbe"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3, 3.4, 3.5'",
+            "index": "pypi",
             "version": "==1.4.46"
         },
         "tenacity": {
