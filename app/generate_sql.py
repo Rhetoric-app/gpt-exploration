@@ -4,7 +4,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import gpt_index as gpt
 import langchain
 import sqlalchemy as db
-from gpt_index.prompts.default_prompts import DEFAULT_TEXT_TO_SQL_PROMPT
+from gpt_index.prompts.prompts import TextToSQLPrompt
 
 try:
     from app.env import OPENAI_API_KEY
@@ -16,6 +16,26 @@ except ModuleNotFoundError as err:
     if not is_streamlit:
         raise err
     OPENAI_API_KEY = st.secrets['OPENAI_API_KEY']
+
+
+TEXT_TO_SQL_TMPL = '''
+Given an input question, create a syntactically correct Postgres SQL query that follows these rules:
+ • The generated SQL must be compatible with Postgres databases.
+ • In the generated SQL, column names should always be prefixed with table names, in the format "table.column".
+
+Use the following format:
+Question: "Question here"
+SQLQuery: "SQL Query to run"
+
+The following describes the public schema in a Postgres database:
+--------------------------------------
+{schema}
+--------------------------------------
+
+Question: {query_str}
+SQLQuery:
+'''
+TEXT_TO_SQL_PROMPT = TextToSQLPrompt(TEXT_TO_SQL_TMPL)
 
 
 @dataclass
@@ -89,15 +109,6 @@ TABLES: List[TableSchema] = [
 
 
 class SQLDatabase(gpt.SQLDatabase):
-    def get_table_names(self) -> Iterable[str]:
-        return super().get_table_names()
-
-    def get_table_columns(self, table_name: str) -> List[Dict[str, Any]]:
-        return super().get_table_columns(table_name)
-
-    def get_single_table_info(self, table_name: str) -> str:
-        return super().get_single_table_info(table_name)
-
     def get_table_info(self, table_names: Optional[List[str]] = None) -> str:
         table_tmpl = 'CREATE TABLE {name} (\n{cols}\n);'
         all_table_names = self.get_table_names()
@@ -160,7 +171,7 @@ print(table_schema)
 
 
 def _execute(nl_query) -> str:
-    sql_str, _ = llm_predictor.predict(DEFAULT_TEXT_TO_SQL_PROMPT, query_str=nl_query, schema=table_schema)
+    sql_str, _ = llm_predictor.predict(TEXT_TO_SQL_PROMPT, query_str=nl_query, schema=table_schema)
     return sql_str
 
 
