@@ -7,8 +7,11 @@ gpt-sql:
 gpt-sec:
 	PYTHONPATH=. pipenv run python app/generate_sec.py
 
-streamlit:
+streamlit-sql:
 	PYTHONPATH=. pipenv run streamlit run app/generate_sql.py
+
+streamlit-sec:
+	PYTHONPATH=. pipenv run streamlit run app/generate_sec.py
 
 python:
 	PYTHONPATH=. pipenv run python

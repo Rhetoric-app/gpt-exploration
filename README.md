@@ -6,11 +6,17 @@ Make sure you've cloned this repo and installed [pipenv](https://pipenv.pypa.io/
 
 ```sh
 # Add your OpenAI API key to a .env file:
-echo "OPENAI_API_KEY=sk-your-api-key-goes-here" > .env
+echo 'OPENAI_API_KEY=sk-your-api-key-goes-here' >> .env
+
+# If you're using the SQL generator, you'll also need to add your psql connstring:
+echo 'DB_CONN_STRING="postgresql://user:password@host:5432/db"' >> .env
 
 # Install dependencies using pipenv:
 make install
 
-# Run the demo script:
-make gpt-sql
+# Run the SEC app:
+make streamlit-sec
+
+# Run the SQL app:
+make streamlit-sql
 ```
