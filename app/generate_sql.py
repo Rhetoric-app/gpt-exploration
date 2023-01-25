@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import gpt_index as gpt
 import langchain
@@ -16,15 +16,6 @@ except ModuleNotFoundError as err:
     if not is_streamlit:
         raise err
     OPENAI_API_KEY = st.secrets['OPENAI_API_KEY']
-
-# Configure SqlAlchemy
-engine = db.create_engine("sqlite:///:memory:")
-metadata_obj = db.MetaData(bind=engine)
-
-# Configure LLM
-llm = langchain.OpenAI(temperature=0, model_name="text-davinci-003", openai_api_key=OPENAI_API_KEY)
-llm_predictor = gpt.LLMPredictor(llm=llm)
-prompt_helper = gpt.PromptHelper.from_llm_predictor(llm_predictor)
 
 
 @dataclass
@@ -96,6 +87,63 @@ TABLES: List[TableSchema] = [
     ),
 ]
 
+
+class SQLDatabase(gpt.SQLDatabase):
+    def get_table_names(self) -> Iterable[str]:
+        return super().get_table_names()
+
+    def get_table_columns(self, table_name: str) -> List[Dict[str, Any]]:
+        return super().get_table_columns(table_name)
+
+    def get_single_table_info(self, table_name: str) -> str:
+        return super().get_single_table_info(table_name)
+
+    def get_table_info(self, table_names: Optional[List[str]] = None) -> str:
+        table_tmpl = 'CREATE TABLE {name} (\n{cols}\n);'
+        all_table_names = self.get_table_names()
+
+        if table_names is not None:
+            missing_tables = set(table_names).difference(all_table_names)
+            if missing_tables:
+                raise ValueError(f"table_names {missing_tables} not found in database")
+            all_table_names = table_names
+
+        def _get_col_str(col: Dict[str, str], fk_map: Dict[str, Dict[str, str]]) -> str:
+            col_str = f'  {col["name"]} {col["type"]}'
+            if col.get('primary_key'):
+                col_str += ' PRIMARY KEY'
+            elif col.get('nullable'):
+                col_str += ' NULL'
+            if col['name'] in fk_map:
+                col_str += f' REFERENCES {fk_map[col["name"]]["table"]} ({fk_map[col["name"]]["col"]})'
+            return col_str
+
+        tables = []
+        for table_name in all_table_names:
+            fks: List[Dict[str, str]] = db.inspect(engine).get_foreign_keys(table_name=table_name)
+            fk_map = {
+                f['constrained_columns'][0]: {'table': f['referred_table'], 'col': f['referred_columns'][0]}
+                for f in fks
+            }
+            cols = []
+            for col in self._inspector.get_columns(table_name, schema=self._schema):
+                cols.append(_get_col_str(col, fk_map))
+            cols_str = ',\n'.join(cols)
+            table_str = table_tmpl.format(name=table_name, cols=cols_str)
+            tables.append(table_str)
+
+        return "\n\n".join(tables)
+
+
+# Configure SqlAlchemy
+engine = db.create_engine("sqlite:///:memory:")
+metadata_obj = db.MetaData(bind=engine)
+
+# Configure LLM
+llm = langchain.OpenAI(temperature=0, model_name="text-davinci-003", openai_api_key=OPENAI_API_KEY)
+llm_predictor = gpt.LLMPredictor(llm=llm)
+prompt_helper = gpt.PromptHelper.from_llm_predictor(llm_predictor)
+
 # Create tables
 for table in TABLES:
     db.Table(
@@ -103,33 +151,16 @@ for table in TABLES:
         metadata_obj,
         *[db.Column(col.name, col.type, nullable=col.nullable, primary_key=col.primary_key) for col in table.cols],
     )
-
-# Create DB
 metadata_obj.create_all()
-sql_database = gpt.SQLDatabase(engine, include_tables=[table.name for table in TABLES])
 
-
-def _get_all_tables_desc() -> str:
-    """Get tables schema + optional context as a single string."""
-    tables_desc = []
-    for table_name in sql_database.get_table_names():
-        table_desc = sql_database.get_single_table_info(table_name)
-        table_text = f"Schema of table {table_name}:\n" f"{table_desc}\n"
-        table = next((table for table in TABLES if table.name == table_name), None)
-        if table:
-            table_text += f"Context of table {table.name}:\n"
-            table_text += table.desc
-        tables_desc.append(table_text)
-    result = "\n\n".join(tables_desc)
-    print(result)
-    return result
-
-
-tables_schema = _get_all_tables_desc()
+# Create DB and generate schema
+sql_database = SQLDatabase(engine, include_tables=[table.name for table in TABLES])
+table_schema = sql_database.get_table_info()
+print(table_schema)
 
 
 def _execute(nl_query) -> str:
-    sql_str, _ = llm_predictor.predict(DEFAULT_TEXT_TO_SQL_PROMPT, query_str=nl_query, schema=tables_schema)
+    sql_str, _ = llm_predictor.predict(DEFAULT_TEXT_TO_SQL_PROMPT, query_str=nl_query, schema=table_schema)
     return sql_str
 
 
@@ -147,8 +178,7 @@ if __name__ == '__main__':
 
     is_streamlit = bool(get_script_run_ctx())
     if is_streamlit:
-        # schema = '\n'.join([f'{t.name}\n{"\n".join([f"  {c.name}: {c.type}" for c in t.cols])}' for t in TABLES])  # type: ignore
-        st.write(tables_schema)
+        st.write(table_schema)
         nl_query = st.text_input('Natural language query')
         if st.button('Execute'):
             sql_str = _execute(nl_query)

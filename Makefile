@@ -4,6 +4,9 @@ install:
 gpt-sql:
 	PYTHONPATH=. pipenv run python app/generate_sql.py
 
+streamlit:
+	PYTHONPATH=. pipenv run streamlit run app/generate_sql.py
+
 python:
 	PYTHONPATH=. pipenv run python
 
