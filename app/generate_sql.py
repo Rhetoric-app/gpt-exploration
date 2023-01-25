@@ -118,15 +118,43 @@ def _get_all_tables_desc() -> str:
 
 tables_schema = _get_all_tables_desc()
 
+
+def _execute(nl_query) -> str:
+    sql_str, _ = llm_predictor.predict(DEFAULT_TEXT_TO_SQL_PROMPT, query_str=nl_query, schema=tables_schema)
+    return sql_str
+
+
+def _check_sql(sql_str) -> Optional[Exception]:
+    try:
+        sql_database.run_sql(sql_str)
+        return None
+    except Exception as err:
+        return err
+
+
 if __name__ == '__main__':
-    while True:
-        query_str = input('\nEnter a database query in plain english, or enter "q" to exit\n> ')
-        if query_str == 'q':
-            break
-        sql_query_str, _ = llm_predictor.predict(DEFAULT_TEXT_TO_SQL_PROMPT, query_str=query_str, schema=tables_schema)
-        print('\n')
-        print(sql_query_str)
-        try:
-            sql_database.run_sql(sql_query_str)
-        except Exception as e:
-            print(f'\n\nSQL ERROR:\n{e}')
+    import streamlit as st
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+    is_streamlit = bool(get_script_run_ctx())
+    if is_streamlit:
+        nl_query = st.text_input('Natural language query')
+        if st.button('Execute'):
+            sql_str = _execute(nl_query)
+            err = _check_sql(sql_str)
+            if err:
+                st.write(err)
+            else:
+                st.write(sql_str)
+    else:
+        while True:
+            nl_query = input('\nEnter a database query in plain english, or enter "q" to exit\n> ')
+            if nl_query == 'q':
+                break
+            sql_str = _execute(nl_query)
+            err = _check_sql(sql_str)
+            print('\n\n')
+            if err:
+                print(err)
+            else:
+                print(sql_str)

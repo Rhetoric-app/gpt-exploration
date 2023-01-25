@@ -15,6 +15,7 @@ flake8 = "*"
 python-dotenv = "*"
 types-requests = "*"
 sqlalchemy = "*"
+streamlit = "*"
 
 [dev-packages]
 
