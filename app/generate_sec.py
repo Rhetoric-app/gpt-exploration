@@ -11,8 +11,6 @@ import langchain
 from gpt_index.indices.base import BaseGPTIndex
 from markdownify import MarkdownConverter as _MarkdownConverter
 
-from app.util import text
-
 try:
     from app.env import OPENAI_API_KEY
 except ModuleNotFoundError as err:
