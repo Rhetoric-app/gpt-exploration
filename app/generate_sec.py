@@ -154,7 +154,7 @@ def _build_index():
         with open(_path_to_filing(prefix), 'r') as fileobj:
             content = fileobj.read()
 
-        for chunk in text.chunk_paragraphs(content):
+        for chunk in chunk_paragraphs(content):
             try:
                 doc = gpt.Document(chunk)
                 index.insert(doc)
