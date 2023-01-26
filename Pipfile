@@ -17,6 +17,7 @@ types-requests = "*"
 sqlalchemy = "*"
 streamlit = "*"
 psycopg2-binary = "*"
+markdownify = "*"
 
 [dev-packages]
 
