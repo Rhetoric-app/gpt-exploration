@@ -1,15 +1,17 @@
-from enum import Enum
+import os
 import re
 import subprocess
-import os
+from enum import Enum
+from pathlib import Path
 from time import sleep
 from typing import Iterable, Literal, Optional
+
 import gpt_index as gpt
 import langchain
-from app.util import text
 from gpt_index.indices.base import BaseGPTIndex
 from markdownify import MarkdownConverter as _MarkdownConverter
-from pathlib import Path
+
+from app.util import text
 
 try:
     from app.env import OPENAI_API_KEY
@@ -136,7 +138,7 @@ def _build_index():
             prompt_helper=prompt_helper,
         )
     except Exception:
-        print(f'Failed to load index from disk: rebuilding from scratch...')
+        print('Failed to load index from disk: rebuilding from scratch...')
 
     index = gpt.GPTSimpleVectorIndex(
         documents=[],
@@ -160,12 +162,12 @@ def _build_index():
                 index.insert(doc)
                 sleep(1)
             except Exception as e:
-                print('Failed to index chunk on first attempt: {e}')
+                print(f'Failed to index chunk on first attempt: {e}')
                 sleep(5)
                 try:
                     index.insert(doc)
                 except Exception as e:
-                    print('Failed to index chunk on final attempt, skipping: {e}')
+                    print(f'Failed to index chunk on final attempt, skipping: {e}')
                     sleep(5)
                     continue
 
