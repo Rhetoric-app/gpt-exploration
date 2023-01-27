@@ -18,6 +18,8 @@ except ModuleNotFoundError as err:
     OPENAI_API_KEY = st.secrets['OPENAI_API_KEY']
     DB_CONN_STRING = st.secrets['DB_CONN_STRING']
 
+INDEX_FILENAME = 'sql-index.json'
+TABLE_NAMES: List[str] = []
 
 # Configure SqlAlchemy
 engine = db.create_engine(DB_CONN_STRING)
@@ -30,7 +32,7 @@ def _build_index() -> BaseGPTIndex:
 
     try:
         return gpt.GPTSimpleVectorIndex.load_from_disk(
-            'sql-index.json',
+            INDEX_FILENAME,
             llm_predictor=llm_predictor,
             prompt_helper=prompt_helper,
         )
@@ -56,8 +58,8 @@ def _build_index() -> BaseGPTIndex:
         return col_str
 
     # Index each table in the public schema
-    table_names = db.inspect(engine).get_table_names(schema='public')
-    for table_name in table_names:
+    TABLE_NAMES.extend(db.inspect(engine).get_table_names(schema='public'))
+    for table_name in TABLE_NAMES:
         fk_map = {}
         for fk in db.inspect(engine).get_foreign_keys(table_name=table_name, schema='public'):
             fk_map[fk['constrained_columns'][0]] = {'table': fk['referred_table'], 'col': fk['referred_columns'][0]}
@@ -77,32 +79,63 @@ def _build_index() -> BaseGPTIndex:
             '(END OF SCHEMA)\n'
             'Given an input question, create a syntactically correct Postgres SQL query that follows these rules:\n'
             ' • The generated SQL must be compatible with Postgres databases\n'
+            ' • The generated SQL must not cause an error when executed\n'
             ' • The generated SQL may ONLY reference the following table names: {table_names}\n'
             ' • The generated SQL, column names must be prefixed with table names, in the format "table.column"\n'
             '\n'
             'Use the following format:\n'
-            'Question: "Question here"\n'
-            'SQLQuery: "SQL Query to run"'
-        ).format(table_names=', '.join(f'"{table_name}"' for table_name in table_names))
+            '"QUESTION": "Question here"\n'
+            '"POSTGRES SQL QUERY": "Postgres SQL Query to run"'
+        ).format(table_names=', '.join(f'"{table_name}"' for table_name in TABLE_NAMES))
     )
     index.insert(final_doc)
     try:
-        index.save_to_disk('sql-index.json')
+        index.save_to_disk(INDEX_FILENAME)
     except Exception:
         print('Failed to save index to disk')
     return index
 
 
 def _execute_nl(index: BaseGPTIndex, nl_query: str) -> str:
-    prompt = 'Question: {nl_query}\nSQLQuery: '.format(nl_query=nl_query)
+    prompt = '"QUESTION": {nl_query}\n"POSTGRES SQL QUERY": '.format(nl_query=nl_query)
     response = index.query(prompt)
     return response.response or 'ERROR: NO OUTPUT'
 
 
-def _execute_sql(sql_str) -> Union[Exception, pd.DataFrame]:
+def _execute_sql(sql_str, retries=3) -> Union[Exception, pd.DataFrame]:
     try:
         with engine.connect() as conn:
-            return pd.read_sql(sql_str, conn)
+            try:
+                return pd.read_sql(sql_str, conn)
+            except Exception as e:
+                if not retries:
+                    raise e
+
+                err_str = e.orig if hasattr(e, 'orig') else str(e)
+                doc = gpt.Document(
+                    (
+                        'A query caused the error: "{error}". Ensure that future queries avoid this error.\n'
+                        'Reminder: given an input question, create a syntactically correct Postgres SQL query that follows these rules:\n'
+                        ' • The generated SQL must be compatible with Postgres databases\n'
+                        ' • The generated SQL must not cause an error when executed\n'
+                        ' • The generated SQL may ONLY reference the following table names: {table_names}\n'
+                        ' • The generated SQL, column names must be prefixed with table names, in the format "table.column"\n'
+                    ).format(
+                        error=err_str,
+                        table_names=', '.join(f'"{table_name}"' for table_name in TABLE_NAMES),
+                    )
+                )
+                index.insert(doc)
+                index.save_to_disk(INDEX_FILENAME)
+                nl_query = (
+                    'The following query fails with error "{err_str}":\n'
+                    '________________________________________\n'
+                    '{bad_sql}\n'
+                    '________________________________________\n'
+                    'How would you rewrite this query so that it succeeds?'
+                ).format(err_str=err_str, bad_sql=sql_str)
+                sql_str = _execute_nl(index, nl_query)
+                return _execute_sql(sql_str, retries=(retries - 1))
     except Exception as err:
         return err
 
