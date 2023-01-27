@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Union
 
+import pandas as pd
 import gpt_index as gpt
 import langchain
 import sqlalchemy as db
@@ -98,11 +99,10 @@ def _execute_nl(index: BaseGPTIndex, nl_query: str) -> str:
     return response.response or 'ERROR: NO OUTPUT'
 
 
-def _execute_sql(sql_str) -> Union[Exception, List[Any]]:
+def _execute_sql(sql_str) -> Union[Exception, pd.DataFrame]:
     try:
         with engine.connect() as conn:
-            result = conn.execute(sql_str)
-            return [row for idx, row in enumerate(result) if idx <= 10]
+            return pd.read_sql(sql_str, conn)
     except Exception as err:
         return err
 
