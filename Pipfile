@@ -18,6 +18,7 @@ sqlalchemy = "*"
 streamlit = "*"
 psycopg2-binary = "*"
 markdownify = "*"
+pandas = "*"
 
 [dev-packages]
 
