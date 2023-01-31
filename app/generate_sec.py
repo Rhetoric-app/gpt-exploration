@@ -2,16 +2,16 @@
 Based on: https://medium.datadriveninvestor.com/access-companies-sec-filings-using-python-760e6075d3ad
 """
 
-from time import sleep
-from datetime import datetime
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Optional, Union
+from datetime import datetime
+from time import sleep
+from typing import Any, Dict, List, Optional, Union
 
-import pandas as pd
 import openai
-import sqlalchemy as db
+import pandas as pd
 import requests
+import sqlalchemy as db
 
 try:
     from app.env import OPENAI_API_KEY

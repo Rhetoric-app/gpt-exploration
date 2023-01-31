@@ -1,8 +1,8 @@
-from typing import Any, Dict, List, Union
+from typing import Dict, List, Union
 
-import pandas as pd
 import gpt_index as gpt
 import langchain
+import pandas as pd
 import sqlalchemy as db
 from gpt_index.indices.base import BaseGPTIndex
 
@@ -115,11 +115,11 @@ def _execute_sql(sql_str, retries=3) -> Union[Exception, pd.DataFrame]:
                 doc = gpt.Document(
                     (
                         'A query caused the error: "{error}". Ensure that future queries avoid this error.\n'
-                        'Reminder: given an input question, create a syntactically correct Postgres SQL query that follows these rules:\n'
+                        'Reminder: given an input question, create a syntactically correct Postgres SQL query that follows these rules:\n'  # noqa: E501
                         ' • The generated SQL must be compatible with Postgres databases\n'
                         ' • The generated SQL must not cause an error when executed\n'
                         ' • The generated SQL may ONLY reference the following table names: {table_names}\n'
-                        ' • The generated SQL, column names must be prefixed with table names, in the format "table.column"\n'
+                        ' • The generated SQL, column names must be prefixed with table names, in the format "table.column"\n'  # noqa: E501
                     ).format(
                         error=err_str,
                         table_names=', '.join(f'"{table_name}"' for table_name in TABLE_NAMES),
