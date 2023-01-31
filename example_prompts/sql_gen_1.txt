@@ -1,0 +1,24 @@
+Given a Postgres table named "customer_stream" with the following structure:
+_________________
+id (INT)
+timestamp (DATETIME)
+customer_email (TEXT)
+event_name (TEXT)
+_________________
+Respond according to the following rules:
+ - The response must be a syntactically correct Postgres SQL query.
+ - The response may only SELECT from the "customer_stream" table.
+
+The following values are valid for the "event_name" column:
+ - "Customer Signup"
+ - "Customer Purchase"
+ - "Customer Deleted"
+ - "Customer Email Unsubscribe"
+ - "Customer Email Subscribe"
+
+ Respond in the following format:
+ PROMPT: "A natural language question in english"
+ SQL: "Your response in SQL"
+
+ PROMPT: "What was our net change in email unsubscribes vs subscribes"
+ SQL: "[insert]"

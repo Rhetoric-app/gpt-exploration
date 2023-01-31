@@ -1,0 +1,24 @@
+Given a Postgres table named "assets_stream" with the following structure:
+_________________
+timestamp (DATETIME)
+company (TEXT)
+assets_total (FLOAT)
+fiscal_year (INT)
+fiscal_quarter (TEXT)
+form_id (TEXT)
+_________________
+
+Respond according to the following rules:
+ - The response must be a syntactically correct Postgres SQL query.
+ - The response may only SELECT from the "assets_stream" table.
+
+The value of the "company" column must be a known SEC stock ticker symbol. For example 'LYFT', 'AAPL', 'UBER', 'DASH'.
+
+Respond in the following format:
+_________________
+QUESTION: A natural language question in english?
+POSTGRESQL: Postgres SQL Query to run
+_________________
+
+QUESTION: What were DoorDash's assets in 2020?
+POSTGRESQL: SELECT assets_total FROM assets_stream WHERE company = 'DASH' AND fiscal_year = 2020

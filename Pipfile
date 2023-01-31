@@ -19,6 +19,7 @@ streamlit = "*"
 psycopg2-binary = "*"
 markdownify = "*"
 pandas = "*"
+openai = "*"
 
 [dev-packages]
 
