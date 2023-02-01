@@ -63,7 +63,12 @@ class _BaseMetric:
 
     @classmethod
     def fetch(cls, ticker: str) -> List['_BaseMetric']:
-        data = _get_tag_for_ticker(ticker, tag=cls.tag)
+        try:
+            data = _get_tag_for_ticker(ticker, tag=cls.tag)
+        except requests.exceptions.RequestException as request_error:
+            if request_error.response.status_code == 404:
+                return []
+            raise request_error
         return [cls.from_json(ticker=ticker, data=item) for item in data['units']['USD']]
 
 
@@ -321,6 +326,8 @@ def _extract_companies_from_sql(sql_str) -> List['Company']:
 def _merge_metric_data(*metric_data: Sequence[_BaseMetric]) -> pd.DataFrame:
     df: Optional[pd.DataFrame] = None
     for metric_list in metric_data:
+        if not metric_list:
+            continue
         new_df = pd.DataFrame(data=[asdict(dc) for dc in metric_list])
         if df is None:
             df = new_df
@@ -339,6 +346,7 @@ def _prep_db_for_companies(companies: List['Company'], metrics: List[Type[_BaseM
     engine = _get_sql_engine()
     for company in companies:
         metric_data = [metric.fetch(company.ticker) for metric in metrics]
+        metric_data = [metric for metric in metric_data if metric]
         df = _merge_metric_data(*metric_data)
         sleep(0.11)
         df.to_sql(name=TABLE_NAME, con=engine, if_exists='append', index=False)
