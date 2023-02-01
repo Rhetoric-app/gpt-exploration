@@ -68,7 +68,7 @@ class _BaseMetric:
 
 
 @dataclass
-class Asset(_BaseMetric):
+class Assets(_BaseMetric):
     tag = 'Assets'
     colname = 'total_assets_usd'
     definition = (
@@ -92,11 +92,11 @@ class CashAndCashEquivalents(_BaseMetric):
 
 
 @dataclass
-class MarketableSecurities(_BaseMetric):
+class MarketableSecuritiesCurrent(_BaseMetric):
     tag = 'MarketableSecuritiesCurrent'
-    colname = 'marketable_securities_usd'
-    definition = 'Marketable securities: amount of investment in marketable security, classified as current.'
-    marketable_securities_usd: int
+    colname = 'marketable_securities_current_usd'
+    definition = 'Marketable securities, current: amount of investment in marketable security, classified as current.'
+    marketable_securities_current_usd: int
 
 
 @dataclass
@@ -111,23 +111,60 @@ class NetInventory(_BaseMetric):
 
 
 @dataclass
-class NetDeferredTaxAssets(_BaseMetric):
+class NetDeferredTaxAssetsCurrent(_BaseMetric):
     tag = 'DeferredTaxAssetsNetCurrent'
-    colname = 'deferred_tax_assets_usd'
+    colname = 'deferred_tax_assets_current_usd'
     definition = (
-        'Amount after allocation of valuation allowances of deferred tax asset attributable to deductible temporary '
-        'differences and carryforwards classified as current.'
+        'Net deferred tax assets, current: Amount after allocation of valuation allowances of deferred tax asset '
+        'attributable to deductible temporary differences and carryforwards classified as current.'
     )
-    deferred_tax_assets_usd: int
+    deferred_tax_assets_current_usd: int
+
+
+@dataclass
+class OtherAssetsCurrent(_BaseMetric):
+    tag = 'OtherAssetsCurrent'
+    colname = 'other_assets_current_usd'
+    definition = 'Other assets, current: amount of current assets classified as other.'
+    other_assets_current_usd: int
+
+
+@dataclass
+class AssetsCurrent(_BaseMetric):
+    tag = 'AssetsCurrent'
+    colname = 'assets_current_usd'
+    definition = (
+        'Assets, current: sum of the carrying amounts as of the balance sheet date of all assets that are expected to '
+        'be realized in cash, sold, or consumed within one year (or the normal operating cycle, if longer). Assets are '
+        'probable future economic benefits obtained or controlled by an entity as a result of past transactions or '
+        'events.'
+    )
+    assets_current_usd: int
+
+
+@dataclass
+class NetPropertyPlantAndEquipment(_BaseMetric):
+    tag = 'PropertyPlantAndEquipmentNet'
+    colname = 'net_property_pland_and_equipment_usd'
+    definition = (
+        'Net property, plant, and equipment: amount after accumulated depreciation, depletion and amortization of '
+        'physical assets used in the normal conduct of business to produce goods and services and not intended for '
+        'resale. Examples include, but are not limited to, land, buildings, machinery and equipment, office '
+        'equipment, and furniture and fixtures.'
+    )
+    net_property_pland_and_equipment_usd: int
 
 
 TABLE_NAME = 'company_events'
 METRICS: List[Type[_BaseMetric]] = [
-    Asset,
+    Assets,
     CashAndCashEquivalents,
-    MarketableSecurities,
+    MarketableSecuritiesCurrent,
     NetInventory,
-    NetDeferredTaxAssets,
+    NetDeferredTaxAssetsCurrent,
+    OtherAssetsCurrent,
+    AssetsCurrent,
+    NetPropertyPlantAndEquipment,
 ]
 _SQL_ENGINE: Optional[db.engine.Engine] = None
 _TICKER_TO_COMPANY_MAP: Optional[Dict[str, 'Company']] = None
@@ -232,7 +269,7 @@ def _nl_to_metric_colnames(nl_query: str) -> List[str]:
     Use GPT to extract metric column names from a natural-language question.
     """
     prompt = (
-        'The following is a list of corporate accounting definitions in the format "token": "A definition of the token":\n'
+        'The following is a list of SEC accounting definitions in the format "token": "A definition of the token":\n'
         '__________\n'
         '{metric_defs}\n'
         '__________\n'
