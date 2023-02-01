@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from time import sleep
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import openai
 import pandas as pd
@@ -26,6 +26,11 @@ except ModuleNotFoundError as err:
 finally:
     openai.api_key = OPENAI_API_KEY
 
+_TABLE_NAME = 'company_events'
+_SQL_ENGINE: Optional[db.engine.Engine] = None
+_TICKER_TO_COMPANY_MAP: Optional[Dict[str, 'Company']] = None
+_HTTP_HEADERS: Dict[str, str] = {'User-Agent': 'scripting@rhetoric.app'}
+
 
 @dataclass
 class Company:
@@ -35,18 +40,54 @@ class Company:
 
 
 @dataclass
-class Asset:
+class _BaseMetric:
     timestamp: datetime
     company: str
-    total_assets_usd: int
     fiscal_year: int
     fiscal_quarter: str
-    form_name: str
+
+    @staticmethod
+    def from_json(ticker: str, obj: Dict[str, Any]) -> '_BaseMetric':
+        return _BaseMetric(
+            timestamp=datetime.strptime(obj['end'], '%Y-%m-%d'),
+            company=ticker,
+            fiscal_year=obj['fy'],
+            fiscal_quarter=obj['fp'],
+        )
 
 
-_SQL_ENGINE: Optional[db.engine.Engine] = None
-_TICKER_TO_COMPANY_MAP: Optional[Dict[str, 'Company']] = None
-_HTTP_HEADERS: Dict[str, str] = {'User-Agent': 'scripting@rhetoric.app'}
+@dataclass
+class Asset(_BaseMetric):
+    """
+    Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Assets are probable
+    future economic benefits obtained or controlled by an entity as a result of past transactions or events.
+    """
+
+    total_assets_usd: int
+
+    @staticmethod
+    def from_json(ticker: str, obj: Dict[str, Any]) -> 'Asset':
+        return Asset(total_assets_usd=obj['val'], **asdict(_BaseMetric.from_json(ticker, obj)))
+
+
+@dataclass
+class CashAndCashEquivalents(_BaseMetric):
+    """
+    Amount of currency on hand as well as demand deposits with banks or financial institutions. Includes other kinds of
+    accounts that have the general characteristics of demand deposits. Also includes short-term, highly liquid
+    investments that are both readily convertible to known amounts of cash and so near their maturity that they present
+    insignificant risk of changes in value because of changes in interest rates. Excludes cash and cash equivalents
+    within disposal group and discontinued operation.
+    """
+
+    cash_and_cash_equivalents_usd: int
+
+    @staticmethod
+    def from_json(ticker: str, obj: Dict[str, Any]) -> 'CashAndCashEquivalents':
+        return CashAndCashEquivalents(
+            cash_and_cash_equivalents_usd=obj['val'],
+            **asdict(_BaseMetric.from_json(ticker, obj)),
+        )
 
 
 def _get_sql_engine() -> db.engine.Engine:
@@ -96,61 +137,104 @@ def _get_assets_for_ticker(ticker: str) -> List['Asset']:
     """
     Get all filings for the "Assets" tag for the given company as `Asset` objects.
     """
-    assets: List['Asset'] = []
     data = _get_tag_for_ticker(ticker, tag='Assets')
-    entries = data['units']['USD']
-    for entry in entries:
-        asset = Asset(
-            timestamp=datetime.strptime(entry['end'], '%Y-%m-%d'),
-            company=ticker,
-            total_assets_usd=entry['val'],
-            fiscal_year=entry['fy'],
-            fiscal_quarter=entry['fp'],
-            form_name=entry['form'],
-        )
-        assets.append(asset)
-    return assets
+    return [Asset.from_json(ticker=ticker, obj=obj) for obj in data['units']['USD']]
 
 
-def _nl_to_sql(nl_str) -> str:
+def _get_cash_and_cash_equivalents_for_ticker(ticker: str) -> List['CashAndCashEquivalents']:
+    """
+    Get all filings for the "CashAndCashEquivalentsAtCarryingValue" tag for the given company as
+    `CashAndCashEquivalents` objects.
+    """
+    data = _get_tag_for_ticker(ticker, tag='CashAndCashEquivalentsAtCarryingValue')
+    return [CashAndCashEquivalents.from_json(ticker=ticker, obj=obj) for obj in data['units']['USD']]
+
+
+def _nl_to_sql(nl_query: str) -> str:
     """
     Use GPT to translate a natural-language question into SQL.
     """
     response = openai.Completion.create(
         model="code-davinci-002",
         prompt=(
-            'Given a Postgres table named "assets_stream" with the following structure:\n'
+            'Given a sqlite database table named "{table_name}" with the following structure:\n'
             '_________________\n'
             'timestamp (DATETIME)\n'
             'company (TEXT)\n'
             'total_assets_usd (FLOAT)\n'
+            'cash_and_cash_equivalents_usd (FLOAT)\n'
             'fiscal_year (INT)\n'
             'fiscal_quarter (TEXT)\n'
-            'form_id (TEXT) \n'
             '_________________\n'
             '\n'
             'Respond according to the following rules:\n'
-            ' - The response must be a syntactically correct Postgres SQL query.\n'
-            ' - The response may only SELECT from the "assets_stream" table.\n'
+            ' - The response must be a syntactically correct sqlite query.\n'
+            ' - The response may only SELECT from the "{table_name}" table.\n'
+            '\n'
+            'The value of the "company" column must be a known SEC stock ticker symbol.\n'
+            'For example \'LYFT\', \'AAPL\', \'UBER\', \'DASH\'.\n'
             '\n'
             'The value of the "company" column must be a known SEC stock ticker symbol.\n'
             'For example \'LYFT\', \'AAPL\', \'UBER\', \'DASH\'.\n'
             '\n'
             'Respond in the following format:\n'
             '_________________\n'
-            'QUESTION: A natural language question in english?\n'
-            'POSTGRESQL: Postgres SQL Query to run\n'
+            'QUESTION: A natural language question in English?\n'
+            'SQL: Sqlite SQL Query to run\n'
             '_________________\n'
             '\n'
-            'QUESTION: {}\n'
-            'POSTGRESQL:'
-        ).format(nl_str),
+            'QUESTION: {nl_query}\n'
+            'SQL:'
+        ).format(table_name=_TABLE_NAME, nl_query=nl_query),
         temperature=0,
         max_tokens=256,
         top_p=1,
         frequency_penalty=0,
         presence_penalty=0,
         stop=[";", "\n\n"],
+    )
+    return response.choices[0].text.strip()  # type: ignore [no-any-return]
+
+
+def _nl_to_metric_names(nl_query: str) -> List[str]:
+    """
+    Use GPT to extract metric names from a natural-language question.
+    """
+    response = openai.Completion.create(
+        model="text-davinci-003",
+        prompt=(
+            'The following is a list of corporate accounting definitions in the format "token": "A definition of the token":\n'
+            '__________\n'
+            '"assets_usd": "Sum of the carrying amounts as of the balance sheet date of all assets that are recognized.'
+            ' Assets are probable future economic benefits obtained or controlled by an entity as a result of past'
+            ' transactions or events."\n'
+            '\n'
+            '"cash_and_cash_equivalents_usd": "Amount of currency on hand as well as demand deposits with banks or'
+            ' financial institutions. Includes other kinds of accounts that have the general characteristics of demand'
+            ' deposits."\n'
+            '__________\n'
+            '\n'
+            'Respond according to the following rules:\n'
+            '- The response may only include one of the above tokens\n'
+            '- The response must be in JSON array format, e.g. ["assets_usd"]\n'
+            '- The response must only include tokens that might be used to answer the question\n'
+            '- If none of the tokens might be used to answer the question, return the empty array: []\n'
+            '\n'
+            'Respond in the following format:\n'
+            '__________\n'
+            'QUESTION: A financial question in english\n'
+            'RESPONSE: ["example_token_1", "example_token_2"]\n'
+            '__________\n'
+            '\n'
+            'QUESTION: {nl_query}\n'
+            'RESPONSE:'
+        ).format(nl_query=nl_query),
+        temperature=0,
+        max_tokens=256,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0,
+        stop=["]", "\n"],
     )
     return response.choices[0].text.strip()  # type: ignore [no-any-return]
 
@@ -164,6 +248,18 @@ def _extract_companies_from_sql(sql_str) -> List['Company']:
     return [ticker_map[t] for t in maybe_tickers if t in ticker_map]
 
 
+def _merge_metrics(*metric_lists: Sequence[_BaseMetric]) -> pd.DataFrame:
+    df: Optional[pd.DataFrame] = None
+    for metric_list in metric_lists:
+        new_df = pd.DataFrame(data=[asdict(dc) for dc in metric_list])
+        if df is None:
+            df = new_df
+            continue
+        df = pd.merge(df, new_df, on=['company', 'fiscal_year', 'fiscal_quarter'], how='outer')
+        df = df.drop_duplicates(['company', 'fiscal_year', 'fiscal_quarter'])
+    return df
+
+
 def _prep_db_for_companies(companies: List['Company']) -> None:
     if not companies:
         raise Exception(
@@ -173,9 +269,11 @@ def _prep_db_for_companies(companies: List['Company']) -> None:
     engine = _get_sql_engine()
     for company in companies:
         assets = _get_assets_for_ticker(company.ticker)
-        df = pd.DataFrame(data=[asdict(dc) for dc in assets])
+        cash_and_equivalents = _get_cash_and_cash_equivalents_for_ticker(company.ticker)
+        # df = pd.DataFrame(data=[asdict(dc) for dc in assets])
+        df = _merge_metrics(assets, cash_and_equivalents)
         sleep(0.11)
-        df.to_sql(name='assets_stream', con=engine, if_exists='append', index=False)
+        df.to_sql(name=_TABLE_NAME, con=engine, if_exists='append', index=False)
 
 
 def _request(url: str) -> Dict[str, Any]:
