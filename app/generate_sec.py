@@ -323,21 +323,24 @@ def _extract_companies_from_sql(sql_str) -> List['Company']:
     return [ticker_map[t] for t in maybe_tickers if t in ticker_map]
 
 
-def _merge_metric_data(*metric_data: Sequence[_BaseMetric]) -> pd.DataFrame:
+def _merge_metric_data(metrics: List[Type[_BaseMetric]], *metric_data: Sequence[_BaseMetric]) -> pd.DataFrame:
     df: Optional[pd.DataFrame] = None
+    join_cols = ['company', 'fiscal_year', 'fiscal_quarter']
+
     for metric_list in metric_data:
         if not metric_list:
             continue
-        new_df = pd.DataFrame(data=[asdict(dc) for dc in metric_list])
+        new_df = pd.DataFrame(data=[asdict(dc) for dc in metric_list])[[*join_cols, metric_list[0].colname]]
         if df is None:
             df = new_df
             continue
-        df = pd.merge(df, new_df, on=['company', 'fiscal_year', 'fiscal_quarter'], how='outer')
-        df = df.drop_duplicates(['company', 'fiscal_year', 'fiscal_quarter'])
+        df = pd.merge(df, new_df, on=join_cols, how='outer')
+        df = df.drop_duplicates(join_cols)
     return df
 
 
 def _prep_db_for_companies(companies: List['Company'], metrics: List[Type[_BaseMetric]]) -> None:
+    df: Optional[pd.DataFrame] = None
     if not companies:
         raise Exception(
             'No companies matched your query.\n'
@@ -347,9 +350,18 @@ def _prep_db_for_companies(companies: List['Company'], metrics: List[Type[_BaseM
     for company in companies:
         metric_data = [metric.fetch(company.ticker) for metric in metrics]
         metric_data = [metric for metric in metric_data if metric]
-        df = _merge_metric_data(*metric_data)
+        new_df = _merge_metric_data(metrics, *metric_data)
+
+        if df is None:
+            df = new_df
+            continue
+
+        df = pd.concat([df, new_df], axis=0, ignore_index=True)
         sleep(0.11)
-        df.to_sql(name=TABLE_NAME, con=engine, if_exists='append', index=False)
+
+    if df is None:
+        raise Exception('The SEC API returned no data for this query.')
+    df.to_sql(name=TABLE_NAME, con=engine, if_exists='append', index=False)
 
 
 def _request(url: str) -> Dict[str, Any]:
