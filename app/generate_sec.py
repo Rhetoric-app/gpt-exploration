@@ -2,11 +2,12 @@
 Based on: https://medium.datadriveninvestor.com/access-companies-sec-filings-using-python-760e6075d3ad
 """
 
+import json
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from time import sleep
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import openai
 import pandas as pd
@@ -26,11 +27,6 @@ except ModuleNotFoundError as err:
 finally:
     openai.api_key = OPENAI_API_KEY
 
-_TABLE_NAME = 'company_events'
-_SQL_ENGINE: Optional[db.engine.Engine] = None
-_TICKER_TO_COMPANY_MAP: Optional[Dict[str, 'Company']] = None
-_HTTP_HEADERS: Dict[str, str] = {'User-Agent': 'scripting@rhetoric.app'}
-
 
 @dataclass
 class Company:
@@ -41,53 +37,101 @@ class Company:
 
 @dataclass
 class _BaseMetric:
+    tag = ''
+    colname = ''
+    definition = ''
+
     timestamp: datetime
     company: str
     fiscal_year: int
     fiscal_quarter: str
 
-    @staticmethod
-    def from_json(ticker: str, obj: Dict[str, Any]) -> '_BaseMetric':
-        return _BaseMetric(
-            timestamp=datetime.strptime(obj['end'], '%Y-%m-%d'),
-            company=ticker,
-            fiscal_year=obj['fy'],
-            fiscal_quarter=obj['fp'],
+    @classmethod
+    def from_json(cls, ticker: str, data: Dict[str, Any]) -> '_BaseMetric':
+        return cls(
+            **{
+                'timestamp': datetime.strptime(data['end'], '%Y-%m-%d'),
+                'company': ticker,
+                'fiscal_year': data['fy'],
+                'fiscal_quarter': data['fp'] if data['fp'] != 'FY' else 'Q4',
+                cls.colname: data['val'],
+            }
         )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def fetch(cls, ticker: str) -> List['_BaseMetric']:
+        data = _get_tag_for_ticker(ticker, tag=cls.tag)
+        return [cls.from_json(ticker=ticker, data=item) for item in data['units']['USD']]
 
 
 @dataclass
 class Asset(_BaseMetric):
-    """
-    Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Assets are probable
-    future economic benefits obtained or controlled by an entity as a result of past transactions or events.
-    """
-
+    tag = 'Assets'
+    colname = 'total_assets_usd'
+    definition = (
+        'Assets: sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Assets '
+        'are probable future economic benefits obtained or controlled by an entity as a result of past transactions '
+        'or events.'
+    )
     total_assets_usd: int
-
-    @staticmethod
-    def from_json(ticker: str, obj: Dict[str, Any]) -> 'Asset':
-        return Asset(total_assets_usd=obj['val'], **asdict(_BaseMetric.from_json(ticker, obj)))
 
 
 @dataclass
 class CashAndCashEquivalents(_BaseMetric):
-    """
-    Amount of currency on hand as well as demand deposits with banks or financial institutions. Includes other kinds of
-    accounts that have the general characteristics of demand deposits. Also includes short-term, highly liquid
-    investments that are both readily convertible to known amounts of cash and so near their maturity that they present
-    insignificant risk of changes in value because of changes in interest rates. Excludes cash and cash equivalents
-    within disposal group and discontinued operation.
-    """
-
+    tag = 'CashAndCashEquivalentsAtCarryingValue'
+    colname = 'cash_and_cash_equivalents_usd'
+    definition = (
+        'Cash and cash securities: sum of the carrying amounts as of the balance sheet date of all assets that are '
+        'recognized. Assets are probable future economic benefits obtained or controlled by an entity as a result of '
+        'past transactions or events.'
+    )
     cash_and_cash_equivalents_usd: int
 
-    @staticmethod
-    def from_json(ticker: str, obj: Dict[str, Any]) -> 'CashAndCashEquivalents':
-        return CashAndCashEquivalents(
-            cash_and_cash_equivalents_usd=obj['val'],
-            **asdict(_BaseMetric.from_json(ticker, obj)),
-        )
+
+@dataclass
+class MarketableSecurities(_BaseMetric):
+    tag = 'MarketableSecuritiesCurrent'
+    colname = 'marketable_securities_usd'
+    definition = 'Marketable securities: amount of investment in marketable security, classified as current.'
+    marketable_securities_usd: int
+
+
+@dataclass
+class NetInventory(_BaseMetric):
+    tag = 'InventoryNet'
+    colname = 'net_inventory_usd'
+    definition = (
+        'Net inventory: amount after valuation and LIFO reserves of inventory expected to be sold, or consumed within '
+        'one year or operating cycle, if longer.'
+    )
+    net_inventory_usd: int
+
+
+@dataclass
+class NetDeferredTaxAssets(_BaseMetric):
+    tag = 'DeferredTaxAssetsNetCurrent'
+    colname = 'deferred_tax_assets_usd'
+    definition = (
+        'Amount after allocation of valuation allowances of deferred tax asset attributable to deductible temporary '
+        'differences and carryforwards classified as current.'
+    )
+    deferred_tax_assets_usd: int
+
+
+TABLE_NAME = 'company_events'
+METRICS: List[Type[_BaseMetric]] = [
+    Asset,
+    CashAndCashEquivalents,
+    MarketableSecurities,
+    NetInventory,
+    NetDeferredTaxAssets,
+]
+_SQL_ENGINE: Optional[db.engine.Engine] = None
+_TICKER_TO_COMPANY_MAP: Optional[Dict[str, 'Company']] = None
+_HTTP_HEADERS: Dict[str, str] = {'User-Agent': 'scripting@rhetoric.app'}
 
 
 def _get_sql_engine() -> db.engine.Engine:
@@ -133,38 +177,21 @@ def _get_tag_for_ticker(ticker: str, *, tag: str) -> Dict[str, Any]:
     return _request(url)
 
 
-def _get_assets_for_ticker(ticker: str) -> List['Asset']:
-    """
-    Get all filings for the "Assets" tag for the given company as `Asset` objects.
-    """
-    data = _get_tag_for_ticker(ticker, tag='Assets')
-    return [Asset.from_json(ticker=ticker, obj=obj) for obj in data['units']['USD']]
-
-
-def _get_cash_and_cash_equivalents_for_ticker(ticker: str) -> List['CashAndCashEquivalents']:
-    """
-    Get all filings for the "CashAndCashEquivalentsAtCarryingValue" tag for the given company as
-    `CashAndCashEquivalents` objects.
-    """
-    data = _get_tag_for_ticker(ticker, tag='CashAndCashEquivalentsAtCarryingValue')
-    return [CashAndCashEquivalents.from_json(ticker=ticker, obj=obj) for obj in data['units']['USD']]
-
-
-def _nl_to_sql(nl_query: str) -> str:
+def _nl_to_sql(nl_query: str, metrics: List[Type[_BaseMetric]]) -> str:
     """
     Use GPT to translate a natural-language question into SQL.
     """
     response = openai.Completion.create(
         model="code-davinci-002",
         prompt=(
-            'Given a sqlite database table named "{table_name}" with the following structure:\n'
+            'The following is a desciption of a sqlite database table named "{table_name}" in the format:'
+            ' column_name (COLUMN TYPE) "Column description":\n'
             '_________________\n'
-            'timestamp (DATETIME)\n'
-            'company (TEXT)\n'
-            'total_assets_usd (FLOAT)\n'
-            'cash_and_cash_equivalents_usd (FLOAT)\n'
-            'fiscal_year (INT)\n'
-            'fiscal_quarter (TEXT)\n'
+            'timestamp (DATETIME) "The date that this metric was reported"\n'
+            'company (TEXT) "The stock ticker symbol of the corporation"\n'
+            '{metric_defs}\n'
+            'fiscal_year (INT) "The 4-digit YYYY year for the given metric"\n'
+            'fiscal_quarter (TEXT) "The 2-character quarter, i.e. Q1, Q2, Q3, or Q4"\n'
             '_________________\n'
             '\n'
             'Respond according to the following rules:\n'
@@ -185,7 +212,11 @@ def _nl_to_sql(nl_query: str) -> str:
             '\n'
             'QUESTION: {nl_query}\n'
             'SQL:'
-        ).format(table_name=_TABLE_NAME, nl_query=nl_query),
+        ).format(
+            table_name=TABLE_NAME,
+            nl_query=nl_query,
+            metric_defs='\n'.join([f'{metric.colname} (FLOAT) {metric.definition}' for metric in metrics]),
+        ),
         temperature=0,
         max_tokens=256,
         top_p=1,
@@ -196,47 +227,49 @@ def _nl_to_sql(nl_query: str) -> str:
     return response.choices[0].text.strip()  # type: ignore [no-any-return]
 
 
-def _nl_to_metric_names(nl_query: str) -> List[str]:
+def _nl_to_metric_colnames(nl_query: str) -> List[str]:
     """
-    Use GPT to extract metric names from a natural-language question.
+    Use GPT to extract metric column names from a natural-language question.
     """
+    prompt = (
+        'The following is a list of corporate accounting definitions in the format "token": "A definition of the token":\n'
+        '__________\n'
+        '{metric_defs}\n'
+        '__________\n'
+        '\n'
+        'Respond according to the following rules:\n'
+        '- The response may only include one of the above tokens\n'
+        '- The response must be in JSON array format, e.g. ["assets_usd"]\n'
+        '- The response must only include tokens that might be used to answer the question\n'
+        '- If none of the tokens might be used to answer the question, return the empty array: []\n'
+        '\n'
+        'Respond in the following format:\n'
+        '__________\n'
+        'QUESTION: A financial question in english\n'
+        'RESPONSE: ["example_token_1", "example_token_2"]\n'
+        '__________\n'
+        '\n'
+        'QUESTION: {nl_query}\n'
+        'RESPONSE:'
+    ).format(
+        nl_query=nl_query,
+        metric_defs='\n\n'.join([f'"{metric.colname}": "{metric.definition}"' for metric in METRICS]),
+    )
     response = openai.Completion.create(
         model="text-davinci-003",
-        prompt=(
-            'The following is a list of corporate accounting definitions in the format "token": "A definition of the token":\n'
-            '__________\n'
-            '"assets_usd": "Sum of the carrying amounts as of the balance sheet date of all assets that are recognized.'
-            ' Assets are probable future economic benefits obtained or controlled by an entity as a result of past'
-            ' transactions or events."\n'
-            '\n'
-            '"cash_and_cash_equivalents_usd": "Amount of currency on hand as well as demand deposits with banks or'
-            ' financial institutions. Includes other kinds of accounts that have the general characteristics of demand'
-            ' deposits."\n'
-            '__________\n'
-            '\n'
-            'Respond according to the following rules:\n'
-            '- The response may only include one of the above tokens\n'
-            '- The response must be in JSON array format, e.g. ["assets_usd"]\n'
-            '- The response must only include tokens that might be used to answer the question\n'
-            '- If none of the tokens might be used to answer the question, return the empty array: []\n'
-            '\n'
-            'Respond in the following format:\n'
-            '__________\n'
-            'QUESTION: A financial question in english\n'
-            'RESPONSE: ["example_token_1", "example_token_2"]\n'
-            '__________\n'
-            '\n'
-            'QUESTION: {nl_query}\n'
-            'RESPONSE:'
-        ).format(nl_query=nl_query),
+        prompt=prompt,
         temperature=0,
         max_tokens=256,
         top_p=1,
         frequency_penalty=0,
         presence_penalty=0,
-        stop=["]", "\n"],
+        stop=["\n"],
     )
-    return response.choices[0].text.strip()  # type: ignore [no-any-return]
+    metric_names_str = response.choices[0].text.strip()
+    metric_names = json.loads(metric_names_str)
+    if not metric_names:
+        raise Exception('No metrics matched your search. Please be sure to reference one or more specific metrics.')
+    return metric_names  # type: ignore [no-any-return]
 
 
 def _extract_companies_from_sql(sql_str) -> List['Company']:
@@ -248,9 +281,9 @@ def _extract_companies_from_sql(sql_str) -> List['Company']:
     return [ticker_map[t] for t in maybe_tickers if t in ticker_map]
 
 
-def _merge_metrics(*metric_lists: Sequence[_BaseMetric]) -> pd.DataFrame:
+def _merge_metric_data(*metric_data: Sequence[_BaseMetric]) -> pd.DataFrame:
     df: Optional[pd.DataFrame] = None
-    for metric_list in metric_lists:
+    for metric_list in metric_data:
         new_df = pd.DataFrame(data=[asdict(dc) for dc in metric_list])
         if df is None:
             df = new_df
@@ -260,7 +293,7 @@ def _merge_metrics(*metric_lists: Sequence[_BaseMetric]) -> pd.DataFrame:
     return df
 
 
-def _prep_db_for_companies(companies: List['Company']) -> None:
+def _prep_db_for_companies(companies: List['Company'], metrics: List[Type[_BaseMetric]]) -> None:
     if not companies:
         raise Exception(
             'No companies matched your query.\n'
@@ -268,12 +301,10 @@ def _prep_db_for_companies(companies: List['Company']) -> None:
         )
     engine = _get_sql_engine()
     for company in companies:
-        assets = _get_assets_for_ticker(company.ticker)
-        cash_and_equivalents = _get_cash_and_cash_equivalents_for_ticker(company.ticker)
-        # df = pd.DataFrame(data=[asdict(dc) for dc in assets])
-        df = _merge_metrics(assets, cash_and_equivalents)
+        metric_data = [metric.fetch(company.ticker) for metric in metrics]
+        df = _merge_metric_data(*metric_data)
         sleep(0.11)
-        df.to_sql(name=_TABLE_NAME, con=engine, if_exists='append', index=False)
+        df.to_sql(name=TABLE_NAME, con=engine, if_exists='append', index=False)
 
 
 def _request(url: str) -> Dict[str, Any]:
@@ -300,6 +331,25 @@ def _execute_sql(sql_str: str, retries=0) -> Union[Exception, pd.DataFrame]:
         return err
 
 
+def _execute_nl(nl_query: str) -> Tuple[str, Union[pd.DataFrame, Exception]]:
+    metric_colnames = _nl_to_metric_colnames(nl_query)
+    metrics: List[Type[_BaseMetric]] = []
+    for metric_colname in metric_colnames:
+        for metric in METRICS:
+            if metric.colname == metric_colname:
+                metrics.append(metric)
+
+    sql_str = _nl_to_sql(nl_query, metrics)
+    companies = _extract_companies_from_sql(sql_str)
+
+    try:
+        _prep_db_for_companies(companies, metrics)
+    except Exception as error:
+        return (sql_str, error)
+    response = _execute_sql(sql_str)
+    return (sql_str, response)
+
+
 if __name__ == '__main__':
     import streamlit as st
     from streamlit.runtime.scriptrunner import get_script_run_ctx
@@ -307,39 +357,20 @@ if __name__ == '__main__':
     is_streamlit = bool(get_script_run_ctx())
 
     if is_streamlit:
-        nl_str = st.text_input('Natural language query')
+        st.write('You can ask for financial data for any publicly traded company for any of the following metrics:')
+        st.write('\n\n'.join([metric.definition for metric in METRICS]))
+        nl_query = st.text_input('Natural language query')
         if st.button('Execute'):
-            sql_str = _nl_to_sql(nl_str)
-            companies = _extract_companies_from_sql(sql_str)
-            try:
-                _prep_db_for_companies(companies)
-            except Exception as error:
-                st.write(sql_str)
-                st.write(error)
-            response = _execute_sql(sql_str)
-            if isinstance(response, Exception):
-                st.write(response)
-            else:
-                st.write(sql_str)
-                st.write(response)
+            sql_str, response = _execute_nl(nl_query)
+            st.write(sql_str)
+            st.write(response)
 
     else:
         while True:
-            nl_str = input('\nEnter a database query in plain english, or enter "q" to exit\n> ')
-            if nl_str == 'q':
+            nl_query = input('\nEnter a database query in plain english, or enter "q" to exit\n> ')
+            if nl_query == 'q':
                 break
-            sql_str = _nl_to_sql(nl_str)
-            companies = _extract_companies_from_sql(sql_str)
-            try:
-                _prep_db_for_companies(companies)
-            except Exception as error:
-                print(sql_str)
-                print(error)
-                continue
-            response = _execute_sql(sql_str)
             print('\n\n')
-            if isinstance(response, Exception):
-                print(response)
-            else:
-                print(sql_str)
-                print(response)
+            sql_str, response = _execute_nl(nl_query)
+            print(sql_str)
+            print(response)
