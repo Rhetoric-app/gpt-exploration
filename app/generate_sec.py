@@ -325,7 +325,7 @@ def _extract_companies_from_sql(sql_str) -> List['Company']:
 
 def _merge_metric_data(metrics: List[Type[_BaseMetric]], *metric_data: Sequence[_BaseMetric]) -> pd.DataFrame:
     df: Optional[pd.DataFrame] = None
-    join_cols = ['company', 'fiscal_year', 'fiscal_quarter']
+    join_cols = ['company', 'fiscal_year', 'fiscal_quarter', 'timestamp']
 
     for metric_list in metric_data:
         if not metric_list:
